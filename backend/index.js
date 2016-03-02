@@ -6,25 +6,25 @@ module.exports = function( server, databaseObj, helper, packageObj) {
     var https = require('https');
 
     /**
-	 * Here server is the main app object
-	 * databaseObj is the mapped database from the package.json file
-	 * helper object contains all the helpers methods.
-	 * packegeObj contains the packageObj file of your plugin. 
-	 */
+     * Here server is the main app object
+     * databaseObj is the mapped database from the package.json file
+     * helper object contains all the helpers methods.
+     * packegeObj contains the packageObj file of your plugin.
+     */
 
-	/**
-	 * Initialize the plugin at time of server start.
-	 * init method should never have any argument
-	 * It is a constructor and is populated once the server starts.
-	 * @return {[type]} [description]
-	 */
-	var init = function(){
+    /**
+     * Initialize the plugin at time of server start.
+     * init method should never have any argument
+     * It is a constructor and is populated once the server starts.
+     * @return {[type]} [description]
+     */
+    var init = function(){
         console.log("i am here");
         //Add google login..
         addUserGoogleLogin(server, databaseObj, helper, packageObj);
         //Add facebook login..
         addUserFbLogin(server, databaseObj, helper, packageObj);
-	};
+    };
 
 
     //Visit this link for more info. https://developers.google.com/identity/sign-in/web/backend-auth
@@ -78,50 +78,50 @@ module.exports = function( server, databaseObj, helper, packageObj) {
 
 
 
-	var addUserFbLogin = function(server, databaseObj, helper, packageObj){
+    var addUserFbLogin = function(server, databaseObj, helper, packageObj){
         var User = databaseObj.User;
         var FacebookAccessToken = databaseObj.FacebookAccessToken;
 
         //Now defining a method login with access token
-		User.loginWithAccessToken = function (accessToken, cb) {
-			FB.setAccessToken(accessToken);
-			FB.api('me', function (res) {
-				if(!res || res.error) {
-					console.log(!res ? 'error occurred' : res.error);
-					var err = new Error('Invalid Access Token');
-					err.statusCode = 401;
-					cb(err);
-					return;
-				}
+        User.loginWithFb = function (accessToken, cb) {
+            FB.setAccessToken(accessToken);
+            FB.api('me', {fields: ['id', 'name', "first_name", "last_name", "email"]}, function (res) {
+                if(!res || res.error) {
+                    console.log(!res ? 'error occurred' : res.error);
+                    var err = new Error('Invalid Access Token');
+                    err.statusCode = 401;
+                    cb(err);
+                    return;
+                }
 
-				console.log("Printing the User info obtained from facebook..\n")
-				console.log(res);
+                console.log("Printing the User info obtained from facebook..\n");
+                console.log(res);
 
                 //Now create user and login..
                 createUserOrLogin(res, packageObj, User,  cb);
             });
-		};
+        };
 
 
-		User.remoteMethod(
-			'loginWithFb',
-			{
-				description: 'Logins a user by authenticating it with an external entity',
-				accepts: [
-					{ arg: 'external_access_token', type: 'string', required: true, http: { source:'form'} }
-				],
-				returns: {
-					arg: 'accessToken', type: 'object', root: true,
-					description:
-					'The response body contains properties of the AccessToken created on login.\n' +
-					'Depending on the value of `include` parameter, the body may contain ' +
-					'additional properties:\n\n' +
-					'  - `user` - `{User}` - Data of the currently logged in user. (`include=user`)\n\n'
-				},
-				http: {verb: 'post'}
-			}
-		);
-	};
+        User.remoteMethod(
+            'loginWithFb',
+            {
+                description: 'Logins a user by authenticating it with an external entity',
+                accepts: [
+                    { arg: 'external_access_token', type: 'string', required: true, http: { source:'form'} }
+                ],
+                returns: {
+                    arg: 'accessToken', type: 'object', root: true,
+                    description:
+                    'The response body contains properties of the AccessToken created on login.\n' +
+                    'Depending on the value of `include` parameter, the body may contain ' +
+                    'additional properties:\n\n' +
+                    '  - `user` - `{User}` - Data of the currently logged in user. (`include=user`)\n\n'
+                },
+                http: {verb: 'post'}
+            }
+        );
+    };
 
 
 
@@ -136,7 +136,7 @@ module.exports = function( server, databaseObj, helper, packageObj) {
     var createUserOrLogin = function(data, packageObj, User,  callback){
         // accessToken is valid, so
         var query = { email : data.email},
-        password = util.generateKey(packageObj.secretKey, "sha1", "hex");
+            password = util.generateKey(packageObj.secretKey, "sha1", "hex");
 
         User.findOne({where: query}, function (err,user){
             var defaultError = new Error('login failed');
@@ -147,21 +147,20 @@ module.exports = function( server, databaseObj, helper, packageObj) {
                 callback(defaultError);
             }else if(!user){
                 // User email not found in the db case, create a new profile and then log him in
-                User.create({email: query.email, password: password}, function(err, user) {
+                User.create({email: query.email, password: password, "firstName": data.first_name, "lastName": data.last_name}, function(err, user) {
                     if(err){
                         callback(defaultError);
                     }else{
                         User.login({ email: query.email, password: password}, function(err, accessToken){
+                            if(err){
+                                //User is not created using facebook signup but through other method...link the user
+
+                            }
                             callback(null, accessToken);
+                            //Now Storing value in the server..
                         });
                     }
-                    //Also save the user credentials in the
-                    //FIXME TODO
-                    //TODO
-                    //ADD THE ACCESS TOKEN TO THIS USER DATA..
-                    //ALSO DOWNLOAD THE PROFILE PICTURE FROM FACEBOOK AND INFO.
-                    //ALSO STORE THE IMAGE IN AMAZON S3 ACCOUNT..
-                    //AND THEN RETURN THE NEW PROFILE INFORMATION..
+
 
                 });
             }
@@ -182,8 +181,23 @@ module.exports = function( server, databaseObj, helper, packageObj) {
 
 
 
-	//return all the methods that you wish to provide user to extend this plugin.
-	return {
-		init: init
-	};
+    var updateAccessTokenModel = function(server, AccessTokenModel, UserModel, callback){
+
+            user.createAccessToken(86400, function(error, token) {
+                if (error) return callback(error);
+                token.__data.user = user;
+                console.log(token);
+                //Now add the token to the callback function..
+                callback(error, token);
+            }); //createAccessToken
+
+    };
+
+
+
+
+    //return all the methods that you wish to provide user to extend this plugin.
+    return {
+        init: init
+    };
 }; //module.exports
