@@ -98,7 +98,7 @@ module.exports = function( server, databaseObj, helper, packageObj) {
                 console.log(res);
 
                 //Now create user and login..
-                createUserOrLogin(res, packageObj, User,  cb);
+                createUserOrLogin(server, res, packageObj, User,  cb);
             });
         };
 
@@ -128,17 +128,19 @@ module.exports = function( server, databaseObj, helper, packageObj) {
     //Create user or login user.....
     /**
      * Create a user if not availaible and then login user finally.
-     * @param data  {object} {email: dummy@gmail.com, password:3535, firstName: robins, lastName: Gupta}
+     * @param data  {object} {email: dummy@gmail.com, password:3535, firstName: robins, lastName: Gupta, id}
      * @param packageObj
      * @param User {Loopback User model}
      * @param callback
      */
-    var createUserOrLogin = function(data, packageObj, User,  callback){
+    var createUserOrLogin = function(server, data, packageObj, User,   callback){
         // accessToken is valid, so
         var query = { email : data.email},
-            password = util.generateKey(packageObj.secretKey, "sha1", "hex");
+        password = packageObj.secretKey,
+        AccessTokenModel
 
-        User.findOne({where: query}, function (err,user){
+
+        User.findOne({where: query}, function (err, user){
             var defaultError = new Error('login failed');
             defaultError.statusCode = 401;
             defaultError.code = 'LOGIN_FAILED';
@@ -165,15 +167,7 @@ module.exports = function( server, databaseObj, helper, packageObj) {
                 });
             }
             else{
-                // User found in the database, so just log him in
-                User.login({ email: query.email, password: password}, function(err, accessToken){
-                    if(err){
-                        callback(defaultError);
-                    }else{
-                        callback(null,accessToken);
-                    }
-
-                });
+                updateAccessTokenModel(server, data,  user, AccessTokenModel, thirdPartyAccessToken, type,  callback);
             }
         });
     };
@@ -181,15 +175,37 @@ module.exports = function( server, databaseObj, helper, packageObj) {
 
 
 
-    var updateAccessTokenModel = function(server, AccessTokenModel, UserModel, callback){
+    var updateAccessTokenModel = function(server, data,  userInstance, AccessTokenModel, thirdPartyAccessToken, type,  callback){
 
-            user.createAccessToken(86400, function(error, token) {
-                if (error) return callback(error);
-                token.__data.user = user;
+        userInstance.createAccessToken(86400, function(error, token) {
+            if (error) {
+                return callback(error);
+            }else{
+                token.__data.user = userInstance;
                 console.log(token);
                 //Now add the token to the callback function..
-                callback(error, token);
-            }); //createAccessToken
+                callback(null,  token);
+                //Now save the user to AccessToken model..
+                data = {
+                    "id": data.id,
+                    "FbUserId": data.id,
+                    "token": thirdPartyAccessToken,
+                    "expires": new Date(token.ttl),
+                    "type": type
+                };
+                console.log("updating values...");
+                console.log(data);
+                AccessTokenModel.upsert(data)
+                    .then(function(values){
+                        console.log(values);
+                        console.log("successfully updated third party access token data.");
+                    })
+                    .catch(function(err){
+                        console.error("Error updating access token for " + type );
+                        console.error(err);
+                    });
+            }
+        }); //createAccessToken
 
     };
 
