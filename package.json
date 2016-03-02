@@ -33,8 +33,7 @@
   "services": {},
   "dependencies": {
     "fb": "^1.0.2",
-    "gapi": "0.0.3",
-    "request": "^2.69.0"
+    "https": "^1.0.0"
   },
   "optionalDependencies": {},
   "repository": {
