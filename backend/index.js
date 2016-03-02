@@ -2,7 +2,7 @@
 /*global module, require, return, console */
 module.exports = function( server, databaseObj, helper, packageObj) {
     var FB = require('fb');
-    var util = require("./utils");
+    //var util = require("./utils");
     var https = require('https');
 
     /**
@@ -19,7 +19,6 @@ module.exports = function( server, databaseObj, helper, packageObj) {
      * @return {[type]} [description]
      */
     var init = function(){
-        console.log("i am here");
         //Add google login..
         addUserGoogleLogin(server, databaseObj, helper, packageObj);
         //Add facebook login..
@@ -30,7 +29,7 @@ module.exports = function( server, databaseObj, helper, packageObj) {
     //Visit this link for more info. https://developers.google.com/identity/sign-in/web/backend-auth
     var addUserGoogleLogin = function(server, databaseObj, helper, packageObj){
         var User = databaseObj.User;
-        User.loginWithAccessToken = function(accessToken, callback){
+        User.loginWithGoogle = function(accessToken, callback){
             if(accessToken){
                 var url = "https://www.googleapis.com/oauth2/v3/tokeninfo?id_token=" + accessToken;
 
@@ -46,14 +45,12 @@ module.exports = function( server, databaseObj, helper, packageObj) {
                                 var userData = {};
                                 userData.email = data.email;
                                 userData.name = data.name;
-                                if(name){
-                                    var temp = name.split(" ");
-                                    userData.firstName = temp[0];
-                                    if(temp.length === 2){
-                                        userData.lastName = temp[1];
-                                    }
-                                }
-                                createUserOrLogin(server, res, packageObj, User, databaseObj, accessToken, "google", callback);
+                                userData.firstName = data.given_name;
+                                userData.lastName = data.family_name;
+
+                                var profileUrl = data.picture;
+
+                                createUserOrLogin(server, res, packageObj, User, databaseObj, accessToken, profileUrl, "google", callback);
                             }
                         });
                     }
@@ -103,13 +100,13 @@ module.exports = function( server, databaseObj, helper, packageObj) {
                     return;
                 }
 
-                //var profileUrl =
+                var profileUrl = "https://graph.facebook.com/"+ res.id +"/picture?width=500&height=500";
 
                 console.log("Printing the User info obtained from facebook..\n");
                 console.log(res);
 
                 //Now create user and login..
-                createUserOrLogin(server, res, packageObj, User, databaseObj, accessToken, "facebook", cb);
+                createUserOrLogin(server, res, packageObj, User, databaseObj, accessToken, profileUrl, "facebook", cb);
             });
         };
 
@@ -146,8 +143,10 @@ module.exports = function( server, databaseObj, helper, packageObj) {
      * @param callback
      * @param databaseObj Snaphy databaseObj model
      * @param thirdPartyAccessToken {String}  Access Token obtained from third party server
+     * @param picture {String}  Url for the profile picture..
+     * @param type {String}  facebook| google provider name
      */
-    var createUserOrLogin = function(server, data, packageObj, User, databaseObj, thirdPartyAccessToken, type, callback){
+    var createUserOrLogin = function(server, data, packageObj, User, databaseObj, thirdPartyAccessToken, picture,  type, callback){
         // accessToken is valid, so
         var query = { email : data.email},
         password = packageObj.secretKey,
@@ -176,10 +175,14 @@ module.exports = function( server, databaseObj, helper, packageObj) {
                             //Now Storing value in the server..
                         });
 
+                        //TODO STORE IMAGE BEFORE GENERATING ACCESS TOKENS..
+                        /**
+                         *TODO  Store picture info here
+                         */
+
+
                         updateAccessTokenModel(server, data, user, AccessTokenModel, thirdPartyAccessToken, type,  callback);
                     }
-
-
                 });
             }
             else{
