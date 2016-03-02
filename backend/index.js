@@ -42,7 +42,18 @@ module.exports = function( server, databaseObj, helper, packageObj) {
                                 console.log("Printing the User info obtained from google..\n")
                                 console.log(data);
                                 //Now create user and login..
-                                createUserOrLogin(data, packageObj, User,  callback);
+                                //createUserOrLogin(data, packageObj, User,  callback);
+                                var userData = {};
+                                userData.email = data.email;
+                                userData.name = data.name;
+                                if(name){
+                                    var temp = name.split(" ");
+                                    userData.firstName = temp[0];
+                                    if(temp.length === 2){
+                                        userData.lastName = temp[1];
+                                    }
+                                }
+                                createUserOrLogin(server, res, packageObj, User, databaseObj, accessToken, "google", callback);
                             }
                         });
                     }
@@ -80,8 +91,6 @@ module.exports = function( server, databaseObj, helper, packageObj) {
 
     var addUserFbLogin = function(server, databaseObj, helper, packageObj){
         var User = databaseObj.User;
-        var FacebookAccessToken = databaseObj.FacebookAccessToken;
-
         //Now defining a method login with access token
         User.loginWithFb = function (accessToken, cb) {
             FB.setAccessToken(accessToken);
@@ -94,11 +103,13 @@ module.exports = function( server, databaseObj, helper, packageObj) {
                     return;
                 }
 
+                //var profileUrl =
+
                 console.log("Printing the User info obtained from facebook..\n");
                 console.log(res);
 
                 //Now create user and login..
-                createUserOrLogin(server, res, packageObj, User,  cb);
+                createUserOrLogin(server, res, packageObj, User, databaseObj, accessToken, "facebook", cb);
             });
         };
 
@@ -128,17 +139,19 @@ module.exports = function( server, databaseObj, helper, packageObj) {
     //Create user or login user.....
     /**
      * Create a user if not availaible and then login user finally.
+     * @param server loopback app object
      * @param data  {object} {email: dummy@gmail.com, password:3535, firstName: robins, lastName: Gupta, id}
      * @param packageObj
-     * @param User {Loopback User model}
+     * @param User {Object} {Loopback User model}
      * @param callback
+     * @param databaseObj Snaphy databaseObj model
+     * @param thirdPartyAccessToken {String}  Access Token obtained from third party server
      */
-    var createUserOrLogin = function(server, data, packageObj, User,   callback){
+    var createUserOrLogin = function(server, data, packageObj, User, databaseObj, thirdPartyAccessToken, type, callback){
         // accessToken is valid, so
         var query = { email : data.email},
         password = packageObj.secretKey,
-        AccessTokenModel
-
+        AccessTokenModel = databaseObj.FacebookAccessToken;
 
         User.findOne({where: query}, function (err, user){
             var defaultError = new Error('login failed');
@@ -156,11 +169,14 @@ module.exports = function( server, databaseObj, helper, packageObj) {
                         User.login({ email: query.email, password: password}, function(err, accessToken){
                             if(err){
                                 //User is not created using facebook signup but through other method...link the user
-
+                                return console.error(err);
                             }
-                            callback(null, accessToken);
+                            console.log("Real data access tokens", accessToken);
+                            //callback(null, accessToken);
                             //Now Storing value in the server..
                         });
+
+                        updateAccessTokenModel(server, data, user, AccessTokenModel, thirdPartyAccessToken, type,  callback);
                     }
 
 
@@ -176,9 +192,10 @@ module.exports = function( server, databaseObj, helper, packageObj) {
 
 
     var updateAccessTokenModel = function(server, data,  userInstance, AccessTokenModel, thirdPartyAccessToken, type,  callback){
-
+        console.log("Now updating the values and generating access tokens");
         userInstance.createAccessToken(86400, function(error, token) {
             if (error) {
+                console.error(error);
                 return callback(error);
             }else{
                 token.__data.user = userInstance;
@@ -193,6 +210,7 @@ module.exports = function( server, databaseObj, helper, packageObj) {
                     "expires": new Date(token.ttl),
                     "type": type
                 };
+
                 console.log("updating values...");
                 console.log(data);
                 AccessTokenModel.upsert(data)
