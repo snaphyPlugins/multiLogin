@@ -3,8 +3,8 @@
 module.exports = function( server, databaseObj, helper, packageObj) {
     var FB = require('fb');
     //var util = require("./utils");
-    var https = require('https');
-
+    var request = require('request');
+    //var gapi = require('gapi');
     /**
      * Here server is the main app object
      * databaseObj is the mapped database from the package.json file
@@ -29,35 +29,51 @@ module.exports = function( server, databaseObj, helper, packageObj) {
     //Visit this link for more info. https://developers.google.com/identity/sign-in/web/backend-auth
     var addUserGoogleLogin = function(server, databaseObj, helper, packageObj){
         var User = databaseObj.User;
+        var defaultError = new Error('login failed');
+        defaultError.statusCode = 401;
+        defaultError.code = 'LOGIN_FAILED';
+
         User.loginWithGoogle = function(accessToken, callback){
             if(accessToken){
-                var url = "https://www.googleapis.com/oauth2/v3/tokeninfo?id_token=" + accessToken;
+                var url = "https://www.googleapis.com/oauth2/v1/userinfo?access_token=" + accessToken;
+                //console.log(url);
 
-                https.get(
-                    url,
-                    function(res) {
-                        res.on('data', function(data) {
-                            if(data){
-                                console.log("Printing the User info obtained from google..\n")
-                                console.log(data);
-                                //Now create user and login..
-                                //createUserOrLogin(data, packageObj, User,  callback);
-                                var userData = {};
-                                userData.email = data.email;
-                                userData.name = data.name;
-                                userData.firstName = data.given_name;
-                                userData.lastName = data.family_name;
 
-                                var profileUrl = data.picture;
+                request(url, function (error, response, data) {
+                    if (!error && response.statusCode === 200) {
+                        if(data){
+                            console.log("Printing the User info obtained from google..\n")
+                            console.log(data);
+                            //Now create user and login..
+                            //createUserOrLogin(data, packageObj, User,  callback);
+                            var userData = {};
+                            userData.email = data.email;
+                            userData.name = data.name;
+                            userData.firstName = data.given_name;
+                            userData.lastName = data.family_name;
 
-                                createUserOrLogin(server, res, packageObj, User, databaseObj, accessToken, profileUrl, "google", callback);
+                            var profileUrl = data.picture;
+                            console.log(profileUrl);
+                            //Now adding a dummy profile pic..
+                            if(profileUrl){
+                                userData.profilePic = {
+                                    url: {
+                                        defaultUrl:data.picture,
+                                        unSignedUrl: data.picture
+                                    }
+                                };
                             }
-                        });
+
+                            createUserOrLogin(server, response, packageObj, User, databaseObj, accessToken, profileUrl, "google", callback);
+                        }else{
+                            return callback(defaultError, null);
+                        }
+                    }else{
+                        console.log(error); // Show the HTML for the Google homepage.
+                        console.error("Error getting data from the google plus server.");
+                        // Send error
+                        callback(error, null);
                     }
-                ).on('error', function(err) {
-                    console.error("Error getting data from the google plus server.");
-                    // Send error
-                    callback(err, null);
                 });
             }
         };
@@ -87,9 +103,11 @@ module.exports = function( server, databaseObj, helper, packageObj) {
 
 
     var addUserFbLogin = function(server, databaseObj, helper, packageObj){
+
         var User = databaseObj.User;
         //Now defining a method login with access token
         User.loginWithFb = function (accessToken, cb) {
+            //console.log("i am here");
             FB.setAccessToken(accessToken);
             FB.api('me', {fields: ['id', 'name', "first_name", "last_name", "email"]}, function (res) {
                 if(!res || res.error) {
@@ -102,8 +120,15 @@ module.exports = function( server, databaseObj, helper, packageObj) {
 
                 var profileUrl = "https://graph.facebook.com/"+ res.id +"/picture?width=500&height=500";
 
-                console.log("Printing the User info obtained from facebook..\n");
-                console.log(res);
+                //console.log(profileUrl);
+                if(profileUrl){
+                    res.profilePic = {
+                        url: {
+                            defaultUrl:profileUrl,
+                            unSignedUrl: profileUrl
+                        }
+                    };
+                }
 
                 //Now create user and login..
                 createUserOrLogin(server, res, packageObj, User, databaseObj, accessToken, profileUrl, "facebook", cb);
@@ -147,48 +172,43 @@ module.exports = function( server, databaseObj, helper, packageObj) {
      * @param type {String}  facebook| google provider name
      */
     var createUserOrLogin = function(server, data, packageObj, User, databaseObj, thirdPartyAccessToken, picture,  type, callback){
-        // accessToken is valid, so
-        var query = { email : data.email},
-        password = packageObj.secretKey,
-        AccessTokenModel = databaseObj.FacebookAccessToken;
-
-        User.findOne({where: query}, function (err, user){
-            var defaultError = new Error('login failed');
-            defaultError.statusCode = 401;
-            defaultError.code = 'LOGIN_FAILED';
-
-            if(err){
-                callback(defaultError);
-            }else if(!user){
-                // User email not found in the db case, create a new profile and then log him in
-                User.create({email: query.email, password: password, "firstName": data.first_name, "lastName": data.last_name}, function(err, user) {
-                    if(err){
-                        callback(defaultError);
-                    }else{
-                        User.login({ email: query.email, password: password}, function(err, accessToken){
-                            if(err){
-                                //User is not created using facebook signup but through other method...link the user
-                                return console.error(err);
-                            }
-                            console.log("Real data access tokens", accessToken);
-                            //callback(null, accessToken);
-                            //Now Storing value in the server..
-                        });
-
-                        //TODO STORE IMAGE BEFORE GENERATING ACCESS TOKENS..
-                        /**
-                         *TODO  Store picture info here
-                         */
+        var defaultError = new Error('login failed');
+        defaultError.statusCode = 401;
+        defaultError.code = 'LOGIN_FAILED';
+        if(data.email){
+            // accessToken is valid, so
+            var query = { email : data.email},
+                password = packageObj.secretKey,
+                AccessTokenModel = databaseObj.FacebookAccessToken;
 
 
-                        updateAccessTokenModel(server, data, user, AccessTokenModel, thirdPartyAccessToken, type,  callback);
+            User.findOne({where: query}, function (err, user){
+
+
+                if(err){
+                    callback(defaultError);
+                }else if(!user){
+                    var userData = {email: query.email, password: password, "firstName": data.first_name, "lastName": data.last_name };
+                    if(data.profilePic){
+                        user.profilePic = data.profilePic;
                     }
-                });
-            }
-            else{
-                updateAccessTokenModel(server, data,  user, AccessTokenModel, thirdPartyAccessToken, type,  callback);
-            }
-        });
+                    // User email not found in the db case, create a new profile and then log him in
+                    User.create(userData, function(err, user) {
+                        if(err){
+                            return callback(defaultError);
+                        }else{
+                            updateAccessTokenModel(server, data, user, AccessTokenModel, thirdPartyAccessToken, type,  callback);
+                        }
+                    });
+                }
+                else{
+                    updateAccessTokenModel(server, data,  user, AccessTokenModel, thirdPartyAccessToken, type,  callback);
+                }
+            });
+        }else{
+            callback(defaultError);
+        }
+
     };
 
 
@@ -202,7 +222,7 @@ module.exports = function( server, databaseObj, helper, packageObj) {
                 return callback(error);
             }else{
                 token.__data.user = userInstance;
-                console.log(token);
+                //console.log(token);
                 //Now add the token to the callback function..
                 callback(null,  token);
                 //Now save the user to AccessToken model..
@@ -211,7 +231,8 @@ module.exports = function( server, databaseObj, helper, packageObj) {
                     "FbUserId": data.id,
                     "token": thirdPartyAccessToken,
                     "expires": new Date(token.ttl),
-                    "type": type
+                    "type": type,
+                    "userId": userInstance.id
                 };
 
                 console.log("updating values...");
