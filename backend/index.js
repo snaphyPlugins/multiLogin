@@ -235,7 +235,7 @@ module.exports = function( server, databaseObj, helper, packageObj) {
 
 
     var updateAccessTokenModel = function(server, data,  userInstance, AccessTokenModel, thirdPartyAccessToken, thirdPartyId,  type,  callback){
-        userInstance.createAccessToken(86400, function(error, token) {
+        userInstance.createAccessToken(31536000, function(error, token) {
             if (error) {
                 console.error(error);
                 return callback(error);
