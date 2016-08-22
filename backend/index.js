@@ -36,7 +36,6 @@ module.exports = function( server, databaseObj, helper, packageObj) {
         defaultError.code = 'LOGIN_FAILED';
 
         User.loginWithGoogle = function(accessToken, callback){
-            console.log("i am here in loginWithGoogle");
             if(accessToken){
                 //var url = "https://www.googleapis.com/oauth2/v1/userinfo?access_token=" + accessToken;
                 var url = "https://www.googleapis.com/oauth2/v3/tokeninfo?id_token=" + accessToken;
@@ -191,8 +190,7 @@ module.exports = function( server, databaseObj, helper, packageObj) {
      * @param thirdPartyId {String}  facebook| google user id
      */
     var createUserOrLogin = function(server, data, packageObj, User, databaseObj, thirdPartyAccessToken, thirdPartyId,  type, callback){
-        console.log("I am here");
-        console.log(data);
+        
         var defaultError = new Error('login failed');
         defaultError.statusCode = 401;
         defaultError.code = 'LOGIN_FAILED';
@@ -245,8 +243,6 @@ module.exports = function( server, databaseObj, helper, packageObj) {
                 return callback(error);
             }else{
                 token.__data.user = userInstance;
-                console.log("i am here too");
-                console.log(token);
                 callback(null,  token);
                 //Now save the user to AccessToken model..
                 data = {
