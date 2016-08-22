@@ -29,12 +29,14 @@ module.exports = function( server, databaseObj, helper, packageObj) {
 
     //Visit this link for more info. https://developers.google.com/identity/sign-in/web/backend-auth
     var addUserGoogleLogin = function(server, databaseObj, helper, packageObj){
+
         var User = databaseObj.User;
         var defaultError = new Error('login failed');
         defaultError.statusCode = 401;
         defaultError.code = 'LOGIN_FAILED';
 
         User.loginWithGoogle = function(accessToken, callback){
+            console.log("i am here in loginWithGoogle");
             if(accessToken){
                 //var url = "https://www.googleapis.com/oauth2/v1/userinfo?access_token=" + accessToken;
                 var url = "https://www.googleapis.com/oauth2/v3/tokeninfo?id_token=" + accessToken;
